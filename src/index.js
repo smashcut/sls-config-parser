@@ -6,7 +6,9 @@
  * LICENSE file in the root directory of this source tree.
 */
 
-const YAML = require('yamljs')
+// const YAML = require('yamljs')
+const yaml = require("js-yaml");
+const cloudformationSchema = require('@serverless/utils/cloudformation-schema');
 const { homedir } = require('os')
 const { join, dirname } = require('path')
 const crypto = require('crypto')
@@ -16,7 +18,8 @@ const AWS_DIR = join(homedir(), '.aws')
 
 const _parseYmlToJson = (str, ymlPath) => {
 	try {
-		return YAML.parse(str)
+     const doc = yaml.load(str, {schema: cloudformationSchema});
+		return doc; //YAML.parse(str)
 	} catch(err) {
 		throw new Error(`Failed to parse YAML file ${ymlPath}. ${err.stack || err.message}`)
 	}
@@ -365,7 +368,7 @@ const _resolveTokenRef = ({ config, tokenRef, tokenRefs, optTokens, rootFolder }
 			if (ref.self.dotPath && _isPathResolved(config, ref.self.dotPath) === false)
 				return 
 			// Get self value from 'config'
-			const explicitValue = ref.self.dotPath ? objHelp.get(config, ref.self.dotPath) : null
+			const explicitValue = ref.self.dotPath ? _getConfigValue(ref.self.dotPath, ...[config, ...parentConfigs]) : null; //objHelp.get(config, ref.self.dotPath) : null
 			if (!explicitValue)
 				throw new Error(`'self' variable ${ref.self.dotPath} located under ${dotPath} not found. Check if there are typos.`)
 
@@ -375,13 +378,13 @@ const _resolveTokenRef = ({ config, tokenRef, tokenRefs, optTokens, rootFolder }
 			else { // else try to find the self's in the 'tokenRefs' to resolve it.
 				const selfTokenRef = tokenRefs.find(({ dotPath:dp }) => dp == ref.self.dotPath)
 				if (selfTokenRef) 
-					_resolveTokenRef({ config, tokenRef:selfTokenRef, tokenRefs, optTokens, rootFolder })
+					_resolveTokenRef({ config, tokenRef:selfTokenRef, tokenRefs, optTokens, rootFolder, parentConfigs })
 			}
 		} else if (type == 'file') {
 			const externalConfigPath = join(rootFolder, ref.file.path[0])
 			const [, ...props] = ref.file.path
 			const propsPath = props.join('.')
-			const externalConfig = _parse(externalConfigPath, optTokens)
+			const externalConfig = _parse(externalConfigPath, {...optTokens, parentConfigs: [config]});
 			if (!externalConfig)
 				throw new Error(`'file' with path ${externalConfigPath} located under ${dotPath} is empty.`)
 
@@ -405,18 +408,31 @@ const _resolveTokenRef = ({ config, tokenRef, tokenRefs, optTokens, rootFolder }
 const _injectTokens = (config, explicitTokenRefs, rootFolder, optTokens) => {
 	optTokens = optTokens || {}
 	explicitTokenRefs = explicitTokenRefs || []
-	optTokens = optTokens || {}
+	// optTokens = optTokens || {}
+  parentConfigs = optTokens.parentConfigs || [];
 
 	explicitTokenRefs.map(tokenRef => _resolveTokenRef({
 		config,
 		tokenRef,
 		tokenRefs: explicitTokenRefs,
 		optTokens,
-		rootFolder
+		rootFolder,
+    parentConfigs
 	}))
 
 	return config
 }
+
+const _getConfigValue = (path, ...configs) => {
+  var out = undefined;
+  configs.some( (c) => {
+    if(c){
+      out = objHelp.get(c, path);
+      return !!out;
+    }
+  });
+  return out;
+} 
 
 /**
  * Parses a tokenized serverless.yml file to a concrete JSON config file where tokens have been replaced.

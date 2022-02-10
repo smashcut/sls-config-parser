@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "co": "^4.6.0",
-    "yamljs": "^0.3.0"
+    "js-yaml": "^4.1.0",
+    "@serverless/utils" :"^6.0.2"
   }
 }
